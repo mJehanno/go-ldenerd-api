@@ -4,15 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"sort"
+	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/mjehanno/goldenerd/config"
+	goldmanager "github.com/mjehanno/goldenerd/gold-manager"
 	"github.com/mjehanno/goldenerd/transaction"
 	"github.com/vectorhacker/goro"
 )
 
 func main() {
-
+	// Creating fiber app with config
 	app := fiber.New(fiber.Config{
 		CaseSensitive: true,
 		AppName:       "goldener",
@@ -20,43 +25,125 @@ func main() {
 
 	// Default middleware config
 	app.Use(logger.New())
+	//var cashedCoin goldmanager.Coin
 
+	currentConf := config.GetConfigFromDb()
+
+	fmt.Println("lastevent : ", currentConf.LastReadEvent)
+	// Eventstore
 	client := goro.Connect("http://127.0.0.1:2113", goro.WithBasicAuth("admin", ""))
-	catchupSubscription := client.CatchupSubscription("transactions", 0) // sta
+	catchupSubscription := client.CatchupSubscription("transactions", int64(currentConf.LastReadEvent))
 	writer := client.Writer("transactions")
-	go func() {
-		ctx := context.Background()
+	ctx := context.Background()
 
+	go func() {
 		transactions := catchupSubscription.Subscribe(ctx)
 
-		for transaction := range transactions {
-			fmt.Printf("%s\n", transaction.Event.Data)
+		t := new(transaction.Transaction)
+		for tr := range transactions {
+			// Unquoting received string to sanitize
+			jsonInput, err := strconv.Unquote(string(tr.Event.Data))
+			if err != nil {
+				fmt.Println(err)
+			}
+			// Json Parsing
+			err = json.Unmarshal([]byte(jsonInput), &t)
+			if err != nil {
+				fmt.Println(err)
+			}
+			transaction.AddTransaction(*t)
+			coins := goldmanager.GetCurrentGoldAmount()
+
+			if t.Type == transaction.Credit {
+				for _, a := range t.Amount {
+					switch a.Currency {
+					case goldmanager.Copper:
+						coins.Copper += a.Value
+					case goldmanager.Silver:
+						coins.Silver += a.Value
+					case goldmanager.Electrum:
+						coins.Electrum += a.Value
+					case goldmanager.Gold:
+						coins.Gold += a.Value
+					case goldmanager.Platinum:
+						coins.Platinum += a.Value
+					}
+				}
+			} else {
+				sort.Slice(t.Amount, func(i, j int) bool { return t.Amount[i].Currency < t.Amount[j].Currency })
+				if coins.Copper >= t.Amount[0].Value {
+					coins.Copper -= t.Amount[0].Value
+				} else {
+
+				}
+				if coins.Silver >= t.Amount[1].Value {
+					coins.Silver -= t.Amount[1].Value
+				} else {
+
+				}
+				if coins.Electrum >= t.Amount[2].Value {
+					coins.Electrum -= t.Amount[2].Value
+				} else {
+
+				}
+				if coins.Gold >= t.Amount[3].Value {
+					coins.Gold -= t.Amount[3].Value
+				} else {
+
+				}
+				if coins.Platinum >= t.Amount[4].Value {
+					coins.Platinum -= t.Amount[4].Value
+				}
+			}
+			goldmanager.UpdateGoldAmount(coins)
+			currentConf.LastReadEvent++
+			config.UpdateConfig(currentConf)
+
 		}
 	}()
 
-	ctx := context.Background()
+	api := app.Group("/api")
 
-	app.Get("api/transactions/history", func(c *fiber.Ctx) error {
-		reader := client.FowardsReader("transactions")
+	gold := api.Group("/gold")
 
-		events, err := reader.Read(ctx, 0, 1)
-		if err != nil {
-			panic(err)
+	gold.Get("/", func(c *fiber.Ctx) error {
+		coins := goldmanager.GetCurrentGoldAmount()
+		sum := 0
+		if reflectedCoin := reflect.ValueOf(coins); reflectedCoin.Kind() == reflect.Struct {
+			for i := 0; i < int(goldmanager.Limit); i++ {
+				index := reflectedCoin.Field(i + 1).Int()
+				sum += int(goldmanager.Convert(int(index), goldmanager.Currency(i), goldmanager.Copper))
+			}
 		}
-		return c.JSON(events)
+		return c.JSON(struct {
+			Gold int
+		}{Gold: goldmanager.Convert(sum, goldmanager.Copper, goldmanager.Gold)})
 	})
 
-	app.Get("/", func(c *fiber.Ctx) error {
-		return c.SendString("Hello, World!")
+	gold.Get("/details", func(c *fiber.Ctx) error {
+		coins := goldmanager.GetCurrentGoldAmount()
+		coins.Id = ""
+		return c.JSON(coins)
 	})
 
-	app.Post("/api/transactions", func(c *fiber.Ctx) error {
+	tr := api.Group("/transactions")
+
+	tr.Get("/history", func(c *fiber.Ctx) error {
+		transations := transaction.GetAllTransactionHistory()
+		return c.JSON(transations)
+	})
+
+	/**
+	*	TODO: Protect this route with keycloak.
+	 */
+	tr.Post("/", func(c *fiber.Ctx) error {
 
 		t := new(transaction.Transaction)
 		if err := c.BodyParser(t); err != nil {
 			fmt.Println("can't convert body")
 			return err
 		}
+
 		obj, err := json.Marshal(&t)
 		if err != nil {
 			fmt.Println("can't convert to json")
