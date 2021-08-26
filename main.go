@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/golang-jwt/jwt"
+	"github.com/mjehanno/goldenerd/auth"
 	"github.com/mjehanno/goldenerd/config"
 	goldmanager "github.com/mjehanno/goldenerd/gold-manager"
 	"github.com/mjehanno/goldenerd/transaction"
@@ -25,19 +29,22 @@ func main() {
 
 	// Default middleware config
 	app.Use(logger.New())
-	//var cashedCoin goldmanager.Coin
 
 	currentConf := config.GetConfigFromDb()
+	currentConf.KeycloakRealm = "Goldener"
+	currentConf.KeycloakClientID = "goldener"
+	currentConf.KeycloakSecret = "3bb43fbe-e07e-4243-a53a-1d6bcdb1f3a7"
 
 	fmt.Println("lastevent : ", currentConf.LastReadEvent)
 	// Eventstore
 	client := goro.Connect("http://127.0.0.1:2113", goro.WithBasicAuth("admin", ""))
 	catchupSubscription := client.CatchupSubscription("transactions", int64(currentConf.LastReadEvent))
 	writer := client.Writer("transactions")
-	ctx := context.Background()
+	eventStoreCtx := context.Background()
+	keycloackCtx := context.Background()
 
 	go func() {
-		transactions := catchupSubscription.Subscribe(ctx)
+		transactions := catchupSubscription.Subscribe(eventStoreCtx)
 
 		t := new(transaction.Transaction)
 		for tr := range transactions {
@@ -104,6 +111,42 @@ func main() {
 
 	api := app.Group("/api")
 
+	api.Post("/login", func(c *fiber.Ctx) error {
+		var u auth.User
+		if err := c.BodyParser(&u); err != nil {
+			fmt.Println("can't convert body")
+			return err
+		}
+		token, err := auth.GetClient().Login(keycloackCtx, currentConf.KeycloakClientID, currentConf.KeycloakSecret, currentConf.KeycloakRealm, u.Username, u.Password)
+		if err != nil {
+			log.Println(fmt.Errorf("error happened while login : %s", err))
+		}
+		return c.JSON(auth.Jwt{AccessToken: token.AccessToken, ExpiresIn: token.ExpiresIn, RefreshToken: token.RefreshToken})
+	})
+
+	api.Post("/refresh", func(c *fiber.Ctx) error {
+		head := c.Get("Authorization")
+		head = strings.Replace(head, "Bearer ", "", -1)
+		headToken, _ := jwt.Parse(head, func(token *jwt.Token) (interface{}, error) {
+			return token.Claims, nil
+		})
+
+		result, err := auth.GetClient().RetrospectToken(keycloackCtx, headToken.Raw, currentConf.KeycloakClientID, currentConf.KeycloakSecret, currentConf.KeycloakRealm)
+		if err != nil || !*result.Active {
+			return c.SendStatus(401)
+		}
+
+		var t auth.Jwt
+		if err := c.BodyParser(&t); err != nil {
+			fmt.Println("can't convert body")
+			return err
+		}
+
+		token, _ := auth.GetClient().RefreshToken(keycloackCtx, t.RefreshToken, currentConf.KeycloakClientID, currentConf.KeycloakSecret, currentConf.KeycloakRealm)
+
+		return c.JSON(token)
+	})
+
 	gold := api.Group("/gold")
 
 	gold.Get("/", func(c *fiber.Ctx) error {
@@ -137,6 +180,16 @@ func main() {
 	*	TODO: Protect this route with keycloak.
 	 */
 	tr.Post("/", func(c *fiber.Ctx) error {
+		head := c.Get("Authorization")
+		head = strings.Replace(head, "Bearer ", "", -1)
+		token, _ := jwt.Parse(head, func(token *jwt.Token) (interface{}, error) {
+			return token.Claims, nil
+		})
+
+		result, err := auth.GetClient().RetrospectToken(keycloackCtx, token.Raw, currentConf.KeycloakClientID, currentConf.KeycloakSecret, currentConf.KeycloakRealm)
+		if err != nil || !*result.Active {
+			return c.SendStatus(401)
+		}
 
 		t := new(transaction.Transaction)
 		if err := c.BodyParser(t); err != nil {
@@ -151,7 +204,7 @@ func main() {
 		}
 
 		event := goro.CreateEvent("transaction", json.RawMessage(obj), nil, 0)
-		err = writer.Write(ctx, goro.ExpectedVersionAny, event)
+		err = writer.Write(eventStoreCtx, goro.ExpectedVersionAny, event)
 		if err != nil {
 			fmt.Println("can't write in eventstore")
 			return (err)

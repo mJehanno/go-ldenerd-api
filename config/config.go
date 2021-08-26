@@ -12,4 +12,7 @@ type Config struct {
 	ArangoPassword    string
 	ArangoHost        string
 	KeycloakHost      string
+	KeycloakRealm     string
+	KeycloakSecret    string
+	KeycloakClientID  string
 }
