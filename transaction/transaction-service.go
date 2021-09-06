@@ -5,7 +5,7 @@ import (
 	"strconv"
 
 	"github.com/arangodb/go-driver"
-	"github.com/mjehanno/goldenerd/database"
+	"github.com/mjehanno/go-ldenerd-api/database"
 )
 
 func getTransactionCollection() *driver.Collection {

@@ -1,4 +1,4 @@
-module github.com/mjehanno/goldenerd
+module github.com/mjehanno/go-ldenerd-api
 
 go 1.16
 

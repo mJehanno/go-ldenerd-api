@@ -3,7 +3,7 @@ package config
 
 import (
 	"github.com/arangodb/go-driver"
-	"github.com/mjehanno/goldenerd/database"
+	"github.com/mjehanno/go-ldenerd-api/database"
 )
 
 var appConfig Config
@@ -26,7 +26,7 @@ func getConfigCollection() *driver.Collection {
 }
 
 // Returns a config object with stored config
-func GetConfigFromDb() Config {
+func GetConfigFromDb() *Config {
 	db := *database.GetDb()
 	col := *getConfigCollection()
 
@@ -54,12 +54,12 @@ func GetConfigFromDb() Config {
 		appConfig.Id = meta.Key
 	}
 
-	return appConfig
+	return &appConfig
 }
 
 // Returns a config ojbect filled with env variables
-func GetConfigFromEnv() Config {
-	return appConfig
+func GetConfigFromEnv() *Config {
+	return &appConfig
 }
 
 // Update stored config with given object

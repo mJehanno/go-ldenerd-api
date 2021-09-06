@@ -3,10 +3,10 @@ package goldmanager
 
 import (
 	"github.com/arangodb/go-driver"
-	"github.com/mjehanno/goldenerd/database"
+	"github.com/mjehanno/go-ldenerd-api/database"
 )
 
-//
+//Return the collection of coin in database
 func getCoinsCollection() *driver.Collection {
 	db := *database.GetDb()
 
@@ -26,15 +26,15 @@ func getCoinsCollection() *driver.Collection {
 }
 
 //Return current amount of Gold
-func GetCurrentGoldAmount() Coin {
+func GetCurrentGoldAmount() Stock {
 	db := *database.GetDb()
 	col := *getCoinsCollection()
-	var coin Coin
+	var coin Stock
 
 	if len, err := col.Count(database.DbContext); err != nil {
 		panic(err)
 	} else if len == 0 {
-		col.CreateDocument(database.DbContext, Coin{})
+		col.CreateDocument(database.DbContext, Stock{})
 	}
 
 	query := "FOR d IN coins LIMIT 1 RETURN d"
@@ -59,9 +59,8 @@ func GetCurrentGoldAmount() Coin {
 }
 
 //Update current amount of gold
-func UpdateGoldAmount(c Coin) {
+func UpdateGoldAmount(c Stock) {
 	col := *getCoinsCollection()
-
 	_, err := col.UpdateDocument(database.DbContext, c.Id, c)
 
 	if err != nil {

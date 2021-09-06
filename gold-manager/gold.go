@@ -1,5 +1,6 @@
 package goldmanager
 
+//Represent a currency, those are based on D&d 5e rules.
 type Currency int
 
 const (
@@ -19,41 +20,25 @@ var Converter = map[Currency]int{
 	Platinum: 1000,
 }
 
-func (c Currency) GetField() string {
+func (c Currency) String() string {
 	r := ""
 	switch c {
 	case Copper:
-		r = "cc"
+		r = "Copper"
 	case Silver:
-		r = "sc"
+		r = "Silver"
 	case Electrum:
-		r = "tc"
+		r = "Electrum"
 	case Gold:
-		r = "gc"
+		r = "Gold"
 	case Platinum:
-		r = "pc"
+		r = "Platinum"
 	}
 	return r
 }
 
-func GetCurrency(s string) Currency {
-	var curr Currency
-	switch s {
-	case "cc":
-		curr = Copper
-	case "sc":
-		curr = Silver
-	case "ec":
-		curr = Electrum
-	case "gc":
-		curr = Gold
-	case "pc":
-		curr = Platinum
-	}
-	return curr
-}
-
-type Coin struct {
+//Represent a set of coins
+type Stock struct {
 	Id       string `json:"_,omitempty"`
 	Copper   int
 	Silver   int
@@ -62,6 +47,7 @@ type Coin struct {
 	Platinum int
 }
 
+//Convert coins
 func Convert(value int, src, dest Currency) int {
 	if src == dest {
 		return value
