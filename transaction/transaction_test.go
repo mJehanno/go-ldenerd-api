@@ -158,9 +158,6 @@ var aligns = []alignTest{
 	},
 }
 
-/**
-* Todo: Corriger cas d'erreur qui doit pas passer dans le deep-equal
- */
 func TestAlign(t *testing.T) {
 	for _, v := range aligns {
 		r, err := Align(v.current, v.incoming, v.transaction)
@@ -172,7 +169,7 @@ func TestAlign(t *testing.T) {
 		} else if err == nil && v.isFalty {
 			t.Errorf("Failed to align %v et %v on %v type : expected an error. Got %v instead.", v.current, v.incoming, TransactionType(v.transaction), v.expected)
 			continue
-		} else if !reflect.DeepEqual(r, v.expected) {
+		} else if err == nil && !reflect.DeepEqual(r, v.expected) {
 			t.Errorf("Failed to align %v et %v on %v type : expected %v, got %v", v.current, v.incoming, v.transaction, v.expected, r)
 		}
 	}
