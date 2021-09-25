@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -150,9 +151,10 @@ func appInit() (*fiber.App, *config.Config) {
 	app.Use(logger.New())
 
 	currentConf := config.GetConfigFromDb()
-	currentConf.KeycloakRealm = "Goldener"
-	currentConf.KeycloakClientID = "goldener"
-	currentConf.KeycloakSecret = "f7b0d2ac-8d5f-4d91-9cbd-e17695794f25"
+
+	currentConf.KeycloakRealm = os.Getenv("goldener-keycloak-realm")
+	currentConf.KeycloakClientID = os.Getenv("goldener-keycloak-clientid")
+	currentConf.KeycloakSecret = os.Getenv("goldener-keycloak-secret")
 
 	fmt.Println("lastevent : ", currentConf.LastReadEvent)
 	// Eventstore
