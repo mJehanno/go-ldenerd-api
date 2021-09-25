@@ -41,8 +41,10 @@ func main() {
 		token, err := auth.GetClient().Login(keycloackCtx, currentConf.KeycloakClientID, currentConf.KeycloakSecret, currentConf.KeycloakRealm, u.Username, u.Password)
 		if err != nil {
 			log.Println(fmt.Errorf("error happened while login : %s", err))
+			return fiber.ErrBadRequest
 		}
-		return c.JSON(auth.Jwt{AccessToken: token.AccessToken, ExpiresIn: token.ExpiresIn, RefreshToken: token.RefreshToken})
+		aut := auth.Jwt{AccessToken: token.AccessToken, ExpiresIn: token.ExpiresIn, RefreshToken: token.RefreshToken, TokenType: token.TokenType}
+		return c.JSON(aut)
 	})
 
 	api.Post("/refresh", func(c *fiber.Ctx) error {
@@ -51,7 +53,6 @@ func main() {
 		headToken, _ := jwt.Parse(head, func(token *jwt.Token) (interface{}, error) {
 			return token.Claims, nil
 		})
-
 		result, err := auth.GetClient().RetrospectToken(keycloackCtx, headToken.Raw, currentConf.KeycloakClientID, currentConf.KeycloakSecret, currentConf.KeycloakRealm)
 		if err != nil || !*result.Active {
 			return c.SendStatus(401)
@@ -59,8 +60,8 @@ func main() {
 
 		var t auth.Jwt
 		if err := c.BodyParser(&t); err != nil {
-			fmt.Println("can't convert body")
-			return err
+			fmt.Println(err.Error())
+			return fiber.NewError(fiber.StatusBadRequest, "Requests Data not formated correctly")
 		}
 
 		token, _ := auth.GetClient().RefreshToken(keycloackCtx, t.RefreshToken, currentConf.KeycloakClientID, currentConf.KeycloakSecret, currentConf.KeycloakRealm)
@@ -98,31 +99,26 @@ func main() {
 	})
 
 	tr.Post("/", func(c *fiber.Ctx) error {
-		/*head := c.Get("Authorization")
+		head := c.Get("Authorization")
 		head = strings.Replace(head, "Bearer ", "", -1)
-		token, _ := jwt.Parse(head, func(token *jwt.Token) (interface{}, error) {
-			return token.Claims, nil
-		})
 
-		result, err := auth.GetClient().RetrospectToken(keycloackCtx, token.Raw, currentConf.KeycloakClientID, currentConf.KeycloakSecret, currentConf.KeycloakRealm)
+		result, err := auth.GetClient().RetrospectToken(keycloackCtx, head, currentConf.KeycloakClientID, currentConf.KeycloakSecret, currentConf.KeycloakRealm)
 		if err != nil || !*result.Active {
 			return c.SendStatus(401)
-		}*/
-
+		}
 		t := new(transaction.Transaction)
 		if err := c.BodyParser(t); err != nil {
-			fmt.Println("can't convert body")
-			return err
+			fmt.Println(err.Error())
+			return fiber.NewError(fiber.StatusBadRequest, "Requests Data not formated correctly")
 		}
 
 		obj, err := json.Marshal(&t)
 		if err != nil {
-			fmt.Println("can't convert to json")
-			return err
+			fmt.Println(err.Error())
+			return fiber.NewError(fiber.StatusBadRequest, "Requests Data not formated correctly")
 		}
 
 		coins := goldmanager.GetCurrentGoldAmount()
-		fmt.Println("coin in main.go : ", coins)
 		incomingGold := transaction.ConvertSumOfAmountToCoin(t.Amount)
 
 		_, err = transaction.Align(coins, incomingGold, t.Type)
@@ -133,8 +129,8 @@ func main() {
 		event := goro.CreateEvent("transaction", json.RawMessage(obj), nil, 0)
 		err = writer.Write(eventStoreCtx, goro.ExpectedVersionAny, event)
 		if err != nil {
-			fmt.Println("can't write in eventstore")
-			return (err)
+			fmt.Println(err.Error())
+			return fiber.NewError(fiber.StatusInternalServerError, "can't write to database")
 		}
 		return c.SendStatus(201)
 	})
@@ -156,7 +152,7 @@ func appInit() (*fiber.App, *config.Config) {
 	currentConf := config.GetConfigFromDb()
 	currentConf.KeycloakRealm = "Goldener"
 	currentConf.KeycloakClientID = "goldener"
-	currentConf.KeycloakSecret = "3bb43fbe-e07e-4243-a53a-1d6bcdb1f3a7"
+	currentConf.KeycloakSecret = "f7b0d2ac-8d5f-4d91-9cbd-e17695794f25"
 
 	fmt.Println("lastevent : ", currentConf.LastReadEvent)
 	// Eventstore
@@ -190,8 +186,6 @@ func transactionEventHandler(currentConf *config.Config) {
 			currentGold := goldmanager.GetCurrentGoldAmount()
 
 			incomingGold := transaction.ConvertSumOfAmountToCoin(t.Amount)
-
-			fmt.Println(incomingGold)
 
 			coins, err := transaction.Align(currentGold, incomingGold, t.Type)
 			if err != nil {

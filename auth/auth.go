@@ -1,6 +1,10 @@
 package auth
 
-import "github.com/Nerzal/gocloak/v8"
+import (
+	"fmt"
+
+	"github.com/Nerzal/gocloak/v8"
+)
 
 var keyClient gocloak.GoCloak
 
@@ -22,4 +26,8 @@ type Jwt struct {
 	ExpiresIn        int    `json:"expires_in,omitempty"`
 	RefreshExpiresIn int    `json:"refresh_expires_in,omitempty"`
 	TokenType        string `json:"token_type,omitempty"`
+}
+
+func (j Jwt) String() string {
+	return fmt.Sprintf("{\nAccessToken: %v, \nRefreshToken: %v, \nExpiresIn: %v, \nRefreshExpiresIn: %v, \nTokenType: %v \n}", j.AccessToken, j.RefreshToken, j.ExpiresIn, j.RefreshExpiresIn, j.TokenType)
 }
