@@ -4,13 +4,14 @@ import (
 	"fmt"
 
 	"github.com/Nerzal/gocloak/v8"
+	"github.com/mjehanno/go-ldenerd-api/appconfig/conf"
 )
 
 var keyClient gocloak.GoCloak
 
 func GetClient() gocloak.GoCloak {
 	if keyClient == nil {
-		keyClient = gocloak.NewClient("http://localhost/")
+		keyClient = gocloak.NewClient(conf.CurrentConf.KeycloakHost)
 	}
 	return keyClient
 }

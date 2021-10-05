@@ -5,16 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"reflect"
 	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/golang-jwt/jwt"
+	"github.com/mjehanno/go-ldenerd-api/appconfig/conf"
+	"github.com/mjehanno/go-ldenerd-api/appconfig/db"
+	"github.com/mjehanno/go-ldenerd-api/appconfig/env"
 	"github.com/mjehanno/go-ldenerd-api/auth"
-	"github.com/mjehanno/go-ldenerd-api/config"
 	goldmanager "github.com/mjehanno/go-ldenerd-api/gold-manager"
 	"github.com/mjehanno/go-ldenerd-api/transaction"
 	"github.com/vectorhacker/goro"
@@ -27,9 +27,10 @@ var eventStoreCtx context.Context
 var keycloackCtx context.Context
 
 func main() {
-	app, currentConf := appInit()
+	app, config := appInit()
+	conf.CurrentConf = config
 
-	go transactionEventHandler(currentConf)
+	go transactionEventHandler()
 
 	api := app.Group("/api")
 
@@ -39,7 +40,7 @@ func main() {
 			fmt.Println("can't convert body")
 			return fiber.NewError(fiber.StatusBadRequest, "no login/password provided")
 		}
-		token, err := auth.GetClient().Login(keycloackCtx, currentConf.KeycloakClientID, currentConf.KeycloakSecret, currentConf.KeycloakRealm, u.Username, u.Password)
+		token, err := auth.GetClient().Login(keycloackCtx, conf.CurrentConf.KeycloakClientID, conf.CurrentConf.KeycloakSecret, conf.CurrentConf.KeycloakRealm, u.Username, u.Password)
 		if err != nil {
 			log.Println(fmt.Errorf("error happened while login : %s", err))
 			return fiber.ErrBadRequest
@@ -49,12 +50,9 @@ func main() {
 	})
 
 	api.Post("/refresh", func(c *fiber.Ctx) error {
-		head := c.Get("Authorization")
-		head = strings.Replace(head, "Bearer ", "", -1)
-		headToken, _ := jwt.Parse(head, func(token *jwt.Token) (interface{}, error) {
-			return token.Claims, nil
-		})
-		result, err := auth.GetClient().RetrospectToken(keycloackCtx, headToken.Raw, currentConf.KeycloakClientID, currentConf.KeycloakSecret, currentConf.KeycloakRealm)
+		headToken := c.Get("Authorization")
+		headToken = strings.Replace(headToken, "Bearer ", "", -1)
+		result, err := auth.GetClient().RetrospectToken(keycloackCtx, headToken, conf.CurrentConf.KeycloakClientID, conf.CurrentConf.KeycloakSecret, conf.CurrentConf.KeycloakRealm)
 		if err != nil || !*result.Active {
 			return c.SendStatus(401)
 		}
@@ -64,9 +62,11 @@ func main() {
 			fmt.Println(err.Error())
 			return fiber.NewError(fiber.StatusBadRequest, "Requests Data not formated correctly")
 		}
-
-		token, _ := auth.GetClient().RefreshToken(keycloackCtx, t.RefreshToken, currentConf.KeycloakClientID, currentConf.KeycloakSecret, currentConf.KeycloakRealm)
-
+		token, err := auth.GetClient().RefreshToken(keycloackCtx, t.RefreshToken, conf.CurrentConf.KeycloakClientID, conf.CurrentConf.KeycloakSecret, conf.CurrentConf.KeycloakRealm)
+		if err != nil {
+			fmt.Println(err.Error())
+			return fiber.NewError(fiber.StatusInternalServerError, "Error in the server")
+		}
 		return c.JSON(token)
 	})
 
@@ -103,7 +103,7 @@ func main() {
 		head := c.Get("Authorization")
 		head = strings.Replace(head, "Bearer ", "", -1)
 
-		result, err := auth.GetClient().RetrospectToken(keycloackCtx, head, currentConf.KeycloakClientID, currentConf.KeycloakSecret, currentConf.KeycloakRealm)
+		result, err := auth.GetClient().RetrospectToken(keycloackCtx, head, conf.CurrentConf.KeycloakClientID, conf.CurrentConf.KeycloakSecret, conf.CurrentConf.KeycloakRealm)
 		if err != nil || !*result.Active {
 			return c.SendStatus(401)
 		}
@@ -140,7 +140,7 @@ func main() {
 }
 
 //Init application
-func appInit() (*fiber.App, *config.Config) {
+func appInit() (*fiber.App, *conf.Config) {
 	// Creating fiber app with config
 	app := fiber.New(fiber.Config{
 		CaseSensitive: true,
@@ -149,25 +149,23 @@ func appInit() (*fiber.App, *config.Config) {
 
 	// Default middleware config
 	app.Use(logger.New())
+	env.GetConfigFromEnv()
 
-	currentConf := config.GetConfigFromDb()
+	conf.CurrentConf.LastReadEvent, conf.CurrentConf.Id = db.GetConfigFromDb().LastReadEvent, db.GetConfigFromDb().Id
+	fmt.Println(conf.CurrentConf)
 
-	currentConf.KeycloakRealm = os.Getenv("goldener-keycloak-realm")
-	currentConf.KeycloakClientID = os.Getenv("goldener-keycloak-clientid")
-	currentConf.KeycloakSecret = os.Getenv("goldener-keycloak-secret")
-
-	fmt.Println("lastevent : ", currentConf.LastReadEvent)
+	//fmt.Println("lastevent : ", conf.CurrentConf.LastReadEvent)
 	// Eventstore
-	eventStoreClient = goro.Connect("http://127.0.0.1:2113", goro.WithBasicAuth("admin", ""))
-	catchupSubscription = eventStoreClient.CatchupSubscription("transactions", int64(currentConf.LastReadEvent))
-	writer = eventStoreClient.Writer("transactions")
+	eventStoreClient = goro.Connect(conf.CurrentConf.EventstoreHost, goro.WithBasicAuth(conf.CurrentConf.EventstoreUser, ""))
+	catchupSubscription = eventStoreClient.CatchupSubscription(conf.CurrentConf.EvenstoreDb, int64(conf.CurrentConf.LastReadEvent))
+	writer = eventStoreClient.Writer(conf.CurrentConf.EvenstoreDb)
 	eventStoreCtx = context.Background()
 	keycloackCtx = context.Background()
 
-	return app, currentConf
+	return app, conf.CurrentConf
 }
 
-func transactionEventHandler(currentConf *config.Config) {
+func transactionEventHandler() {
 	transactions := catchupSubscription.Subscribe(eventStoreCtx)
 
 	t := new(transaction.Transaction)
@@ -193,11 +191,10 @@ func transactionEventHandler(currentConf *config.Config) {
 			if err != nil {
 				panic(err)
 			}
-			fmt.Println(coins)
 			goldmanager.UpdateGoldAmount(coins)
-			currentConf.LastReadEvent++
+			conf.CurrentConf.LastReadEvent++
 
-			config.UpdateConfig(*currentConf)
+			db.UpdateConfig(*conf.CurrentConf)
 		}
 	}
 }

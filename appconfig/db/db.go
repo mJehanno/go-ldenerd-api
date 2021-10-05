@@ -1,12 +1,10 @@
-//Package config manage the app configuration
-package config
+package db
 
 import (
 	"github.com/arangodb/go-driver"
+	"github.com/mjehanno/go-ldenerd-api/appconfig/conf"
 	"github.com/mjehanno/go-ldenerd-api/database"
 )
-
-var appConfig Config
 
 // Returns db's config collection
 func getConfigCollection() *driver.Collection {
@@ -26,14 +24,14 @@ func getConfigCollection() *driver.Collection {
 }
 
 // Returns a config object with stored config
-func GetConfigFromDb() *Config {
+func GetConfigFromDb() *conf.Config {
 	db := *database.GetDb()
 	col := *getConfigCollection()
 
 	if len, err := col.Count(database.DbContext); err != nil {
 		panic(err)
 	} else if len == 0 {
-		col.CreateDocument(database.DbContext, Config{LastReadEvent: 0})
+		col.CreateDocument(database.DbContext, conf.Config{LastReadEvent: 0})
 	}
 
 	query := "FOR d IN config LIMIT 1 RETURN d"
@@ -45,25 +43,20 @@ func GetConfigFromDb() *Config {
 
 	defer cursor.Close()
 	for {
-		meta, err := cursor.ReadDocument(database.DbContext, &appConfig)
+		meta, err := cursor.ReadDocument(database.DbContext, &conf.AppConfig)
 		if driver.IsNoMoreDocuments(err) {
 			break
 		} else if err != nil {
 			panic(err)
 		}
-		appConfig.Id = meta.Key
+		conf.AppConfig.Id = meta.Key
 	}
 
-	return &appConfig
-}
-
-// Returns a config ojbect filled with env variables
-func GetConfigFromEnv() *Config {
-	return &appConfig
+	return &conf.AppConfig
 }
 
 // Update stored config with given object
-func UpdateConfig(c Config) {
+func UpdateConfig(c conf.Config) {
 	col := *getConfigCollection()
 
 	_, err := col.UpdateDocument(database.DbContext, c.Id, c)

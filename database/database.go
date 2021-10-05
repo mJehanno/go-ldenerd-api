@@ -6,6 +6,7 @@ import (
 
 	"github.com/arangodb/go-driver"
 	"github.com/arangodb/go-driver/http"
+	"github.com/mjehanno/go-ldenerd-api/appconfig/conf"
 )
 
 var currentConnection *driver.Client = nil
@@ -15,7 +16,7 @@ var DbContext = context.Background()
 func getConnexion() *driver.Client {
 	if currentConnection == nil {
 		conn, err := http.NewConnection(http.ConnectionConfig{
-			Endpoints: []string{"http://localhost:8529"},
+			Endpoints: []string{conf.CurrentConf.ArangoHost},
 		})
 		if err != nil {
 			panic(err)
@@ -35,7 +36,7 @@ func getConnexion() *driver.Client {
 func GetDb() *driver.Database {
 	conn := *getConnexion()
 
-	db, err := conn.Database(DbContext, "goldener")
+	db, err := conn.Database(DbContext, conf.CurrentConf.ArangoDb)
 
 	if err != nil {
 		panic(err)
