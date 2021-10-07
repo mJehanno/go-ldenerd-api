@@ -13,6 +13,10 @@ builds:
       - linux
       - windows
       - darwin
+dockers:
+  -
+    image_templates:
+    - "mjehanno/go-ldener-api"
 archives:
   - replacements:
       darwin: Darwin
